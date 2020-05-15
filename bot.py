@@ -14,9 +14,8 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 
-name_state, surname_state, group_state, info_verification_state, ready_state, questions_state = range(6)
+name_state, surname_state, group_state, info_verification_state, ready_state, questions_state, finish_state = range(7)
 user = User()
-# q_states = [i for i in range(12)]
 
 
 def ping(update: Update, context: CallbackContext):
@@ -61,6 +60,7 @@ def cancel(update: Update, context: CallbackContext):
     logger.info('User {} cancelled conversation')
     text = r'Текущий сеанс завершён, чтобы начать заново повторите команду /start'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+    context.chat_data['iter'] = 1
     return ConversationHandler.END
 
 
@@ -85,6 +85,27 @@ def check_info(update: Update, context: CallbackContext):
         logger.error("Expected other answer, got:", answer)
 
 
+def ready(update: Update, context: CallbackContext):
+    if 'questions'not in context.bot_data:
+        context.bot_data['questions'] = util.get_questions(path='personal/questions.txt')
+    quests = context.bot_data['questions']
+    question = quests[0]
+    text = get_question_text(question)
+    buttons = util.get_letter_variants(len(question.variants))
+    reply_markup = ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=reply_markup)
+    return questions_state
+
+
+def get_question_text(q: Question):
+    letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+    text = q.text
+    ending = '\n' if any(len(variant) > 30 for variant in q.variants) else ""
+    for i in range(len(q.variants)):
+        text += "\n" + letters[i] + ". " + q.variants[i] + str(ending)
+    return text
+
+
 def questions(update: Update, context: CallbackContext):
     if 'questions'not in context.bot_data:
         context.bot_data['questions'] = util.get_questions(path='personal/questions.txt')
@@ -93,23 +114,24 @@ def questions(update: Update, context: CallbackContext):
     quests = context.bot_data['questions']
     i = context.chat_data['iter']
 
-    question = quests[i]
-    buttons = [[j] for j in question.variants]
-    reply_markup = ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True)
-    context.bot.send_message(chat_id=update.effective_chat.id, text=question.text, reply_markup=reply_markup)
-    context.chat_data['iter'] += 1
-    return questions_state
+    if i >= len(quests):
+        context.chat_data['iter'] = 1
+        finish(update, context)
+        return ConversationHandler.END
+    else:
+        logger.info(i)
+        question = quests[i]
+        text = get_question_text(question)
+        buttons = util.get_letter_variants(len(question.variants))
+        reply_markup = ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True)
+        context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=reply_markup)
+        context.chat_data['iter'] += 1
+        return questions_state
 
 
-def ready(update: Update, context: CallbackContext):
-    if 'questions'not in context.bot_data:
-        context.bot_data['questions'] = util.get_questions(path='personal/questions.txt')
-    quests = context.bot_data['questions']
-    question = quests[0]
-    buttons = [[i] for i in question.variants]
-    reply_markup = ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True)
-    context.bot.send_message(chat_id=update.effective_chat.id, text=question.text, reply_markup=reply_markup)
-    return questions_state
+def finish(update: Update, context: CallbackContext):
+    text = 'Тест завершен'
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text)
 
 
 def main():
@@ -135,6 +157,7 @@ def main():
         }
     )
     dispatcher.add_handler(conversation_handler)
+    dispatcher.add_handler(CommandHandler('ping', ping))
     dispatcher.add_handler(MessageHandler(Filters.command, unknown))
     updater.start_polling()
     updater.idle()

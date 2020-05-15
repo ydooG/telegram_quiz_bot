@@ -22,21 +22,28 @@ def get_questions(path):
     with open(path, 'r', encoding='utf8') as file:
         q = Question()
         q.variants = []
+        i = 0
         for line in file:
             text = line.split("\n")[0][1:]
             if line.startswith('?'):
                 q.text = text
             elif line.startswith('-'):
                 q.variants.append(text)
+                i += 1
             elif line.startswith('+'):
-                q.answer = text
+                q.answer_index = i
                 q.variants.append(text)
             elif line.startswith('\n'):
+                i = 0
                 questions.append(q)
                 q = Question()
                 q.variants = []
-                continue
     return questions
+
+
+def get_letter_variants(n):
+    letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+    return build_menu(letters[:n], 2)
 
 
 
