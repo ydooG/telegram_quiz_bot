@@ -13,3 +13,5 @@ class User:
         self.name = name
         self.surname = surname
         self.group = group
+        self.answers = []
+        self.points = 0

@@ -41,9 +41,12 @@ def get_questions(path):
     return questions
 
 
+LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+
+
 def get_letter_variants(n):
-    letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
-    return build_menu(letters[:n], 2)
+    return build_menu(LETTERS[:n], 2)
 
 
-
+text = "asasd"
+print(text.capitalize())

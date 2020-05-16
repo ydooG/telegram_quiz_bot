@@ -1,12 +1,13 @@
 from telegram.ext import Updater, CallbackContext, CommandHandler, MessageHandler, Filters, ConversationHandler, \
     CallbackQueryHandler
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup, \
+    ParseMode
 import logging
 
 import smiles
 from models import User, Question
 from credentials import TOKEN
-import util
+import util, gsheet_util as gsheet
 
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -61,6 +62,7 @@ def cancel(update: Update, context: CallbackContext):
     text = r'Текущий сеанс завершён, чтобы начать заново повторите команду /start'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text)
     context.chat_data['iter'] = 1
+    gsheet.write_user(user)
     return ConversationHandler.END
 
 
@@ -93,19 +95,23 @@ def ready(update: Update, context: CallbackContext):
     text = get_question_text(question)
     buttons = util.get_letter_variants(len(question.variants))
     reply_markup = ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True)
-    context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=reply_markup)
+    context.bot.send_message(chat_id=update.effective_chat.id,
+                             text=text,
+                             reply_markup=reply_markup,
+                             parse_mode=ParseMode.HTML)
     return questions_state
 
 
 def get_question_text(q: Question):
-    letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
-    text = q.text
+    letters = util.LETTERS
+    text = "<i>" + q.text + "</i>"
     ending = '\n' if any(len(variant) > 30 for variant in q.variants) else ""
     for i in range(len(q.variants)):
         text += "\n" + letters[i] + ". " + q.variants[i] + str(ending)
     return text
 
 
+# state
 def questions(update: Update, context: CallbackContext):
     if 'questions'not in context.bot_data:
         context.bot_data['questions'] = util.get_questions(path='personal/questions.txt')
@@ -113,25 +119,34 @@ def questions(update: Update, context: CallbackContext):
         context.chat_data['iter'] = 1
     quests = context.bot_data['questions']
     i = context.chat_data['iter']
+    logger.info(i)
+    answer = update.message.text
+    logger.info(str(util.LETTERS.index(answer)) + ":" + str(quests[i-1].answer_index))
+    if util.LETTERS.index(answer) == quests[i - 1].answer_index:
+        user.points += 1
+    user.answers.append(answer)
 
     if i >= len(quests):
-        context.chat_data['iter'] = 1
+        logger.info('Now i = 14')
         finish(update, context)
         return ConversationHandler.END
     else:
-        logger.info(i)
         question = quests[i]
         text = get_question_text(question)
         buttons = util.get_letter_variants(len(question.variants))
         reply_markup = ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True)
-        context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=reply_markup)
+        context.bot.send_message(chat_id=update.effective_chat.id,
+                                 text=text, reply_markup=reply_markup,
+                                 parse_mode=ParseMode.HTML)
         context.chat_data['iter'] += 1
         return questions_state
 
 
 def finish(update: Update, context: CallbackContext):
+    context.chat_data['iter'] = 1
     text = 'Тест завершен'
-    context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=ReplyKeyboardRemove())
+    gsheet.write_user(user)
 
 
 def main():
@@ -159,8 +174,12 @@ def main():
     dispatcher.add_handler(conversation_handler)
     dispatcher.add_handler(CommandHandler('ping', ping))
     dispatcher.add_handler(MessageHandler(Filters.command, unknown))
-    updater.start_polling()
-    updater.idle()
+
+    while True:
+        try:
+            updater.start_polling()
+        except Exception as ex:
+            logger.error(ex)
 
 
 if __name__ == '__main__':
